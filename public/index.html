@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HTTP 通知投递服务</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace">
+        <aside class="panel compose-panel">
+          <div class="panel-header">
+            <p class="eyebrow">Submit</p>
+            <h1>外部 HTTP 通知</h1>
+          </div>
+
+          <form id="notificationForm" class="form-grid">
+            <label>
+              <span>事件类型</span>
+              <input name="eventType" value="subscription.paid" />
+            </label>
+            <label>
+              <span>来源系统</span>
+              <input name="sourceSystem" value="billing-service" />
+            </label>
+            <label class="span-2">
+              <span>目标地址</span>
+              <input name="targetUrl" value="http://127.0.0.1:8000/mock/vendor/crm" required />
+            </label>
+            <label>
+              <span>HTTP Method</span>
+              <select name="method">
+                <option>POST</option>
+                <option>PUT</option>
+                <option>PATCH</option>
+              </select>
+            </label>
+            <label>
+              <span>最大尝试次数</span>
+              <input name="maxAttempts" type="number" min="1" max="10" value="5" />
+            </label>
+            <label class="span-2">
+              <span>Header JSON</span>
+              <textarea name="headers" rows="4">{
+  "X-Vendor-Token": "demo-token"
+}</textarea>
+            </label>
+            <label class="span-2">
+              <span>Body JSON</span>
+              <textarea name="body" rows="8">{
+  "contactId": "C-10086",
+  "status": "paid",
+  "paidAt": "2026-06-08T14:00:00Z"
+}</textarea>
+            </label>
+            <div class="actions span-2">
+              <button type="button" id="fillSuccess">成功示例</button>
+              <button type="button" id="fillFailure">失败示例</button>
+              <button type="submit" class="primary">提交通知</button>
+            </div>
+          </form>
+        </aside>
+
+        <section class="panel list-panel">
+          <div class="panel-header row">
+            <div>
+              <p class="eyebrow">Queue</p>
+              <h2>投递任务</h2>
+            </div>
+            <button id="refreshButton" class="icon-button" title="刷新" aria-label="刷新">
+              <span aria-hidden="true">↻</span>
+            </button>
+          </div>
+
+          <div class="status-tabs" role="tablist" aria-label="状态筛选">
+            <button class="active" data-status="">全部</button>
+            <button data-status="queued">等待</button>
+            <button data-status="waiting_retry">重试</button>
+            <button data-status="succeeded">成功</button>
+            <button data-status="failed">失败</button>
+          </div>
+
+          <div id="message" class="message" hidden></div>
+          <div id="notificationList" class="notification-list"></div>
+        </section>
+      </section>
+    </main>
+
+    <template id="notificationTemplate">
+      <article class="notification-card">
+        <div class="card-top">
+          <div>
+            <p class="event-type"></p>
+            <p class="target-url"></p>
+          </div>
+          <span class="status-pill"></span>
+        </div>
+        <dl class="meta-grid">
+          <div>
+            <dt>来源</dt>
+            <dd class="source-system"></dd>
+          </div>
+          <div>
+            <dt>尝试</dt>
+            <dd class="attempts"></dd>
+          </div>
+          <div>
+            <dt>创建</dt>
+            <dd class="created-at"></dd>
+          </div>
+          <div>
+            <dt>下次投递</dt>
+            <dd class="next-at"></dd>
+          </div>
+        </dl>
+        <p class="error-line"></p>
+        <div class="card-actions">
+          <button class="retry-button">重新投递</button>
+          <button class="copy-button">复制 ID</button>
+        </div>
+      </article>
+    </template>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
