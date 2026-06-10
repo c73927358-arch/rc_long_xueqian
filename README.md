@@ -2,15 +2,29 @@
 
 这是一个模拟企业内部外部 HTTP 通知投递服务的小型实现：
 
-- 后端：`server.py`，Python 标准库实现，无第三方依赖。
+- 后端：`server.py` 是启动入口，核心代码拆分在 `notification_service/`，Python 标准库实现，无第三方依赖。
 - 数据库：SQLite，启动后自动生成 `notifications.db`。
-- 前端：`public/`，由后端直接托管。
+- 前端：`public/`，由后端直接托管；脚本按职责拆分在 `public/js/`。
 - 需求文档：[docs/requirements.md](docs/requirements.md)
 - 设计说明：[docs/design-notes.md](docs/design-notes.md)
 - 测试文档：[docs/test-plan.md](docs/test-plan.md)
 - API 契约：[docs/api-contract.md](docs/api-contract.md)
 - API 接入示例：[docs/api-examples.md](docs/api-examples.md)
 - Agent 协作计划：[docs/agent-loop-plan.md](docs/agent-loop-plan.md)
+- AI 使用说明：[docs/ai-usage-notes.md](docs/ai-usage-notes.md)
+
+## 代码结构
+
+- `server.py`：薄入口，只负责调用应用启动。
+- `notification_service/settings.py`：配置、常量和环境变量解析。
+- `notification_service/auth.py`：调用方 API Key 鉴权，使用共享 Key Authenticator。
+- `notification_service/security.py`：目标 URL 校验、SSRF 防护、重定向校验和脱敏策略。
+- `notification_service/database.py`：SQLite 连接、迁移、行对象转换和队列统计。
+- `notification_service/service.py`：通知用例层，承担创建、查询、导出、重试和死信处理。
+- `notification_service/worker.py`：投递 Worker、重试状态机、attempt 写入和 WorkerPool。
+- `notification_service/metrics.py`：`/health` 和 `/api/stats` 的读模型。
+- `notification_service/http_handler.py`：HTTP Controller，负责路由、JSON/CSV 响应、静态文件和 mock vendor。
+- `public/js/`：前端按 `context`、`utils`、`health`、`form`、`filters`、`list`、`detail`、`examples`、`bootstrap` 拆分，避免继续堆在一个 `app.js` 文件里。
 
 ## 设计摘要
 
