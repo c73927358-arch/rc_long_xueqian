@@ -15,6 +15,13 @@
             <h1>外部 HTTP 通知</h1>
           </div>
 
+          <div class="api-key-tool">
+            <label for="apiKeyInput">
+              <span>API Key（可选）</span>
+              <input id="apiKeyInput" type="password" autocomplete="off" placeholder="留空不发送" />
+            </label>
+          </div>
+
           <form id="notificationForm" class="form-grid">
             <label>
               <span>事件类型</span>
@@ -23,6 +30,10 @@
             <label>
               <span>来源系统</span>
               <input name="sourceSystem" value="billing-service" />
+            </label>
+            <label class="span-2">
+              <span>Request ID</span>
+              <input name="requestId" placeholder="可选，留空由后端生成" />
             </label>
             <label class="span-2">
               <span>目标地址</span>
@@ -40,23 +51,32 @@
               <span>最大尝试次数</span>
               <input name="maxAttempts" type="number" min="1" max="10" value="5" />
             </label>
+            <label>
+              <span>超时秒数</span>
+              <input name="timeoutSeconds" type="number" min="0.1" max="60" step="0.1" inputmode="decimal" placeholder="留空使用服务默认值" />
+            </label>
             <label class="span-2">
               <span>Header JSON</span>
               <textarea name="headers" rows="4">{
   "X-Vendor-Token": "demo-token"
 }</textarea>
             </label>
-            <label class="span-2">
-              <span>Body JSON</span>
-              <textarea name="body" rows="8">{
+            <div class="span-2 field-block">
+              <div class="field-head">
+                <label for="bodyJsonInput">Body JSON</label>
+                <button type="button" id="formatBodyJson">格式化 JSON</button>
+              </div>
+              <textarea id="bodyJsonInput" name="body" rows="8" aria-describedby="bodyJsonError">{
   "contactId": "C-10086",
   "status": "paid",
   "paidAt": "2026-06-08T14:00:00Z"
 }</textarea>
-            </label>
+              <p id="bodyJsonError" class="field-error" role="alert" hidden></p>
+            </div>
             <div class="actions span-2">
               <button type="button" id="fillSuccess">成功示例</button>
               <button type="button" id="fillFailure">失败示例</button>
+              <button type="button" id="copyCurl">复制 curl</button>
               <button type="submit" class="primary">提交通知</button>
             </div>
           </form>
@@ -68,9 +88,13 @@
               <p class="eyebrow">Queue</p>
               <h2>投递任务</h2>
             </div>
-            <button id="refreshButton" class="icon-button" title="刷新" aria-label="刷新">
-              <span aria-hidden="true">↻</span>
-            </button>
+            <div class="list-controls">
+              <button id="retryFailedBatch" type="button">批量重试失败</button>
+              <button id="autoRefreshToggle" type="button" aria-pressed="false">暂停自动刷新</button>
+              <button id="refreshButton" class="icon-button" title="刷新" aria-label="刷新">
+                <span aria-hidden="true">↻</span>
+              </button>
+            </div>
           </div>
 
           <div class="status-tabs" role="tablist" aria-label="状态筛选">
@@ -79,10 +103,211 @@
             <button data-status="waiting_retry">重试</button>
             <button data-status="succeeded">成功</button>
             <button data-status="failed">失败</button>
+            <button data-status="dead_letter">死信/人工</button>
           </div>
+
+          <form id="notificationFilters" class="filter-form" aria-label="任务过滤">
+            <label>
+              <span>事件类型</span>
+              <input name="eventType" placeholder="eventType" autocomplete="off" />
+            </label>
+            <label>
+              <span>来源系统</span>
+              <input name="sourceSystem" placeholder="sourceSystem" autocomplete="off" />
+            </label>
+            <label class="filter-target">
+              <span>目标地址关键词</span>
+              <input name="targetUrl" placeholder="targetUrl 关键词" autocomplete="off" />
+            </label>
+            <label class="filter-time">
+              <span>创建开始</span>
+              <input name="createdFrom" type="datetime-local" step="1" />
+            </label>
+            <label class="filter-time">
+              <span>创建结束</span>
+              <input name="createdTo" type="datetime-local" step="1" />
+            </label>
+            <label class="filter-time">
+              <span>更新开始</span>
+              <input name="updatedFrom" type="datetime-local" step="1" />
+            </label>
+            <label class="filter-time">
+              <span>更新结束</span>
+              <input name="updatedTo" type="datetime-local" step="1" />
+            </label>
+            <label class="filter-sort">
+              <span>排序字段</span>
+              <select name="sortBy">
+                <option value="createdAt">创建时间</option>
+                <option value="updatedAt">更新时间</option>
+                <option value="nextAttemptAt">下次投递</option>
+              </select>
+            </label>
+            <label class="filter-order">
+              <span>顺序</span>
+              <select name="sortOrder">
+                <option value="desc">倒序</option>
+                <option value="asc">正序</option>
+              </select>
+            </label>
+            <label class="filter-limit">
+              <span>Limit</span>
+              <input name="limit" type="number" min="1" max="200" value="50" inputmode="numeric" />
+            </label>
+            <div class="filter-actions">
+              <button type="submit" class="primary">应用过滤</button>
+              <button type="button" id="clearFilters">清空过滤</button>
+              <button type="button" id="exportCsv">导出 CSV</button>
+            </div>
+          </form>
+
+          <section id="healthBar" class="health-bar is-unknown" aria-live="polite">
+            <div class="health-head">
+              <div>
+                <p class="health-kicker">Health / Worker</p>
+                <p id="healthSummary" class="health-summary">等待健康检查</p>
+              </div>
+              <button id="refreshHealth" type="button">刷新健康</button>
+            </div>
+            <dl class="health-metrics" aria-label="健康状态">
+              <div>
+                <dt>Status</dt>
+                <dd data-health="status">-</dd>
+              </div>
+              <div>
+                <dt>Service</dt>
+                <dd data-health="serviceVersion">-</dd>
+              </div>
+              <div>
+                <dt>Schema</dt>
+                <dd data-health="schemaVersion">-</dd>
+              </div>
+              <div>
+                <dt>Database</dt>
+                <dd data-health="database">-</dd>
+              </div>
+              <div>
+                <dt>Worker</dt>
+                <dd data-health="worker">-</dd>
+              </div>
+              <div>
+                <dt>Concurrency</dt>
+                <dd data-health="concurrency">-</dd>
+              </div>
+              <div>
+                <dt>Threads</dt>
+                <dd data-health="threadCount">-</dd>
+              </div>
+              <div>
+                <dt>Alive</dt>
+                <dd data-health="aliveCount">-</dd>
+              </div>
+              <div>
+                <dt>Ready</dt>
+                <dd data-health="readyCount">-</dd>
+              </div>
+              <div>
+                <dt>Queued</dt>
+                <dd data-health="queued">-</dd>
+              </div>
+              <div>
+                <dt>Retry</dt>
+                <dd data-health="waitingRetry">-</dd>
+              </div>
+              <div>
+                <dt>Failed</dt>
+                <dd data-health="failed">-</dd>
+              </div>
+              <div>
+                <dt>Lease(s)</dt>
+                <dd data-health="deliveringLeaseSeconds">-</dd>
+              </div>
+              <div>
+                <dt>Recovered</dt>
+                <dd data-health="lastLeaseRecoveryCount">-</dd>
+              </div>
+              <div>
+                <dt>Expired</dt>
+                <dd data-health="expiredDeliveringCount">-</dd>
+              </div>
+            </dl>
+          </section>
+
+          <dl id="summaryStats" class="summary-stats" aria-label="最近任务汇总">
+            <div>
+              <dt>全部</dt>
+              <dd data-summary="all">0</dd>
+            </div>
+            <div>
+              <dt>等待/重试</dt>
+              <dd data-summary="pending">0</dd>
+            </div>
+            <div>
+              <dt>成功</dt>
+              <dd data-summary="succeeded">0</dd>
+            </div>
+            <div>
+              <dt>失败</dt>
+              <dd data-summary="failed">0</dd>
+            </div>
+            <div>
+              <dt>死信/人工</dt>
+              <dd data-summary="deadLetter">0</dd>
+            </div>
+            <div>
+              <dt>投递中</dt>
+              <dd data-summary="delivering">0</dd>
+            </div>
+          </dl>
+
+          <dl id="deliveryStats" class="delivery-stats" aria-label="投递统计" hidden>
+            <div>
+              <dt>Total</dt>
+              <dd data-stats="total">-</dd>
+            </div>
+            <div>
+              <dt>Service</dt>
+              <dd data-stats="serviceVersion">-</dd>
+            </div>
+            <div>
+              <dt>Schema</dt>
+              <dd data-stats="schemaVersion">-</dd>
+            </div>
+            <div>
+              <dt>Pending</dt>
+              <dd data-stats="pending">-</dd>
+            </div>
+            <div>
+              <dt>Success</dt>
+              <dd data-stats="succeeded">-</dd>
+            </div>
+            <div>
+              <dt>Failed</dt>
+              <dd data-stats="failed">-</dd>
+            </div>
+            <div>
+              <dt>Dead</dt>
+              <dd data-stats="deadLetter">-</dd>
+            </div>
+            <div>
+              <dt>Delivering</dt>
+              <dd data-stats="delivering">-</dd>
+            </div>
+            <div>
+              <dt>Expired</dt>
+              <dd data-stats="expiredDeliveringCount">-</dd>
+            </div>
+          </dl>
 
           <div id="message" class="message" hidden></div>
           <div id="notificationList" class="notification-list"></div>
+          <nav id="paginationBar" class="pagination-bar" aria-label="列表分页">
+            <p id="paginationSummary" class="pagination-summary">等待列表加载</p>
+            <div class="pagination-actions">
+              <button type="button" id="prevPage">上一页</button>
+              <button type="button" id="nextPage">下一页</button>
+            </div>
+          </nav>
         </section>
       </section>
     </main>
@@ -116,11 +341,158 @@
         </dl>
         <p class="error-line"></p>
         <div class="card-actions">
+          <button class="detail-button">详情</button>
           <button class="retry-button">重新投递</button>
+          <button class="dead-letter-button danger-action">标记死信/转人工</button>
           <button class="copy-button">复制 ID</button>
         </div>
       </article>
     </template>
+
+    <section id="detailModal" class="detail-modal" role="dialog" aria-modal="true" aria-labelledby="detailTitle" hidden>
+      <div class="detail-scrim" data-close-detail></div>
+      <aside class="detail-panel" tabindex="-1">
+        <div class="detail-header">
+          <div>
+            <p class="eyebrow">Detail</p>
+            <h2 id="detailTitle">任务详情</h2>
+            <p id="detailSubtitle" class="detail-subtitle"></p>
+          </div>
+          <div class="detail-actions">
+            <button id="refreshDetail" title="刷新详情">刷新详情</button>
+            <button id="retryDetail" class="primary" title="重新投递">重新投递</button>
+            <button id="deadLetterDetail" class="danger-action" title="标记死信/转人工">转人工</button>
+            <button id="closeDetail" class="icon-button" title="关闭" aria-label="关闭">
+              <span aria-hidden="true">×</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="detailLoading" class="detail-loading" hidden>正在加载...</div>
+
+        <div id="detailContent" class="detail-content" hidden>
+          <div class="detail-copy-bar" aria-label="复制调试字段">
+            <button id="copyDetailId" type="button">复制任务 ID</button>
+            <button id="copyDetailTargetUrl" type="button">复制目标 URL</button>
+            <button id="copyDetailRequestId" type="button">复制 Request ID</button>
+          </div>
+
+          <section class="detail-section">
+            <h3>基本信息</h3>
+            <dl class="detail-grid">
+              <div>
+                <dt>事件类型</dt>
+                <dd id="detailEventType"></dd>
+              </div>
+              <div>
+                <dt>来源系统</dt>
+                <dd id="detailSourceSystem"></dd>
+              </div>
+              <div>
+                <dt>目标地址</dt>
+                <dd id="detailTargetUrl"></dd>
+              </div>
+              <div>
+                <dt>HTTP Method</dt>
+                <dd id="detailMethod"></dd>
+              </div>
+              <div>
+                <dt>Request ID</dt>
+                <dd id="detailRequestId"></dd>
+              </div>
+              <div>
+                <dt>状态</dt>
+                <dd><span id="detailStatus" class="status-pill"></span></dd>
+              </div>
+              <div>
+                <dt>失败类型</dt>
+                <dd id="detailFailureType"></dd>
+              </div>
+              <div>
+                <dt>尝试次数</dt>
+                <dd id="detailAttemptCount"></dd>
+              </div>
+              <div>
+                <dt>超时秒数</dt>
+                <dd id="detailTimeoutSeconds"></dd>
+              </div>
+              <div>
+                <dt>投递轮次</dt>
+                <dd id="detailDeliveryRun"></dd>
+              </div>
+              <div>
+                <dt>下次投递</dt>
+                <dd id="detailNextAttemptAt"></dd>
+              </div>
+              <div>
+                <dt>最后状态码</dt>
+                <dd id="detailLastStatusCode"></dd>
+              </div>
+              <div>
+                <dt>创建时间</dt>
+                <dd id="detailCreatedAt"></dd>
+              </div>
+              <div>
+                <dt>更新时间</dt>
+                <dd id="detailUpdatedAt"></dd>
+              </div>
+              <div>
+                <dt>完成投递</dt>
+                <dd id="detailDeliveredAt"></dd>
+              </div>
+            </dl>
+            <p id="detailLastError" class="detail-error"></p>
+          </section>
+
+          <section class="detail-section">
+            <h3>人工处理</h3>
+            <dl class="detail-grid">
+              <div>
+                <dt>最后人工动作</dt>
+                <dd id="detailLastManualAction"></dd>
+              </div>
+              <div>
+                <dt>动作时间</dt>
+                <dd id="detailLastManualActionAt"></dd>
+              </div>
+              <div>
+                <dt>处理人</dt>
+                <dd id="detailLastManualActionBy"></dd>
+              </div>
+              <div>
+                <dt>处理备注</dt>
+                <dd id="detailResolutionNote"></dd>
+              </div>
+            </dl>
+            <div class="manual-action-form" aria-label="转人工请求参数">
+              <label>
+                <span>处理人</span>
+                <input id="manualHandledBy" name="handledBy" value="operator-ui" autocomplete="off" />
+              </label>
+              <label class="manual-note">
+                <span>处理备注</span>
+                <textarea id="manualNote" name="note" rows="3" placeholder="可选，留空则只记录处理人"></textarea>
+              </label>
+            </div>
+          </section>
+
+          <section class="detail-section">
+            <h3>Headers</h3>
+            <pre id="detailHeaders" class="json-block"></pre>
+          </section>
+
+          <section class="detail-section">
+            <h3>Body</h3>
+            <pre id="detailBody" class="json-block"></pre>
+          </section>
+
+          <section class="detail-section">
+            <h3>Attempts</h3>
+            <div id="attemptList" class="attempt-list"></div>
+          </section>
+        </div>
+      </aside>
+    </section>
 
     <script src="/app.js" type="module"></script>
   </body>
